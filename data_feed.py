@@ -32,6 +32,58 @@ SYMBOL_MAP = {
     "near": "NEAR", "aptos": "APT", "sui": "SUI",
 }
 
+# צמדי מסחר ב-Kraken (המקור הראשי). דוג'קוין הוא XDG אצלם.
+KRAKEN_PAIR_MAP = {
+    "bitcoin": "XBTUSD", "ethereum": "ETHUSD", "solana": "SOLUSD",
+    "ripple": "XRPUSD", "cardano": "ADAUSD", "dogecoin": "XDGUSD",
+    "chainlink": "LINKUSD", "avalanche-2": "AVAXUSD", "polkadot": "DOTUSD",
+    "litecoin": "LTCUSD", "tron": "TRXUSD", "shiba-inu": "SHIBUSD",
+    "pepe": "PEPEUSD", "uniswap": "UNIUSD", "aave": "AAVEUSD",
+    "near": "NEARUSD", "aptos": "APTUSD", "sui": "SUIUSD",
+    "the-open-network": "TONUSD",
+}
+
+
+def _kraken_pair_for(coin_id):
+    if coin_id in KRAKEN_PAIR_MAP:
+        return KRAKEN_PAIR_MAP[coin_id]
+    return _symbol_for(coin_id) + "USD"  # ניחוש סביר
+
+
+def _fetch_kraken_one(coin_id):
+    """מחיר של מטבע בודד מ-Kraken. מחזיר dict או None אם הצמד לא קיים."""
+    pair = _kraken_pair_for(coin_id)
+    url = "https://api.kraken.com/0/public/Ticker"
+    resp = requests.get(url, params={"pair": pair}, timeout=15)
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("error"):
+        return None  # צמד לא קיים ב-Kraken - נשלים מהגיבוי
+    result = body.get("result") or {}
+    if not result:
+        return None
+    t = next(iter(result.values()))
+    last = float(t["c"][0])
+    day_open = float(t["o"])
+    change = (last - day_open) / day_open * 100.0 if day_open else 0.0
+    vol_24h_usd = float(t["v"][1]) * last
+    return {"price": last, "change_24h": change, "volume_24h": vol_24h_usd}
+
+
+def _fetch_kraken(watchlist):
+    """מקור ראשי: Kraken - חינמי, בלי מפתח, יציב משרתי ענן."""
+    out = {}
+    for coin in watchlist:
+        try:
+            d = _fetch_kraken_one(coin)
+            if d:
+                out[coin] = d
+        except Exception as e:
+            print(f"[data_feed] kraken error for {coin}: {e}")
+    if not out:
+        raise RuntimeError("kraken returned no data")
+    return out
+
 _HISTORY_MAXLEN = 24 * 60
 _history = {}
 
@@ -100,6 +152,8 @@ def _fetch_cryptocompare(watchlist):
         sym_to_coin.setdefault(sym, coin)
     url = "https://min-api.cryptocompare.com/data/pricemultifull"
     params = {"fsyms": ",".join(sym_to_coin.keys()), "tsyms": "USD"}
+    if config.CRYPTOCOMPARE_API_KEY:
+        params["api_key"] = config.CRYPTOCOMPARE_API_KEY
     resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
     raw = (resp.json() or {}).get("RAW", {})
@@ -159,10 +213,10 @@ def get_snapshot(watchlist):
 
     data = {}
     try:
-        data = _fetch_cryptocompare(watchlist)
+        data = _fetch_kraken(watchlist)
         _backoff_sec = 60  # הצלחה - איפוס הנסיגה
     except Exception as e:
-        print(f"[data_feed] cryptocompare error: {e}")
+        print(f"[data_feed] kraken error: {e}")
         try:
             data = _fetch_coingecko(watchlist)
         except Exception as e2:
@@ -203,17 +257,14 @@ def validate_coin(coin_id):
     if config.DEMO_MODE:
         return "ok"
     try:
-        if coin_id in _fetch_cryptocompare([coin_id]):
+        if _fetch_kraken_one(coin_id):
             return "ok"
     except Exception as e:
-        print(f"[data_feed] validate via cryptocompare failed: {e}")
-        try:
-            return "ok" if coin_id in _fetch_coingecko([coin_id]) else "notfound"
-        except Exception as e2:
-            print(f"[data_feed] validate via coingecko failed: {e2}")
-            return "error"
-    # CryptoCompare ענה אבל לא הכיר - ננסה את CoinGecko לפני שמוותרים
+        print(f"[data_feed] validate via kraken failed: {e}")
+    # לא נמצא ב-Kraken (או תקלה) - ננסה את CoinGecko לפני שמוותרים
     try:
         return "ok" if coin_id in _fetch_coingecko([coin_id]) else "notfound"
-    except Exception:
+    except Exception as e2:
+        print(f"[data_feed] validate via coingecko failed: {e2}")
         return "error"
+ 
