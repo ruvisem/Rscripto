@@ -45,6 +45,9 @@ def load():
 
 def save(state):
     with _lock:
+        # יצירת תיקיית היעד אם אינה קיימת (למשל /data של volume)
+        parent = os.path.dirname(os.path.abspath(config.STATE_FILE))
+        os.makedirs(parent, exist_ok=True)
         tmp = config.STATE_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
@@ -53,3 +56,4 @@ def save(state):
 
 def is_muted(state):
     return time.time() < state.get("muted_until", 0)
+ 
