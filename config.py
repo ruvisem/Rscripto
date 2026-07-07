@@ -8,6 +8,8 @@ import os
 # --- מפתחות (חובה בהרצה אמיתית) ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# מפתח חינמי ל-CryptoCompare/CoinDesk Data (developers.coindesk.com)
+CRYPTOCOMPARE_API_KEY = os.environ.get("CRYPTOCOMPARE_API_KEY", "")
 
 # --- מצב דמו: מריץ עם נתונים מדומים, בלי רשת ---
 DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
@@ -42,3 +44,4 @@ STATE_FILE = os.environ.get("STATE_FILE", "state.json")
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 TELEGRAM_BASE = "https://api.telegram.org"
 ANTHROPIC_BASE = "https://api.anthropic.com/v1/messages"
+ 
