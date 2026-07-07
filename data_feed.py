@@ -195,10 +195,25 @@ def get_snapshot(watchlist):
 
 
 def validate_coin(coin_id):
-    """בדיקה שמטבע נתמך (לפקודת /watch)."""
+    """
+    בדיקה שמטבע נתמך (לפקודת /watch).
+    מחזיר: "ok" - נמצא | "notfound" - לא קיים | "error" - תקלת רשת רגעית.
+    הבדיקה ישירה מול המקורות (עוקפת מטמון ונסיגה) כי מטבע חדש לא במטמון.
+    """
     if config.DEMO_MODE:
-        return True
+        return "ok"
     try:
-        return coin_id in get_snapshot([coin_id])
+        if coin_id in _fetch_cryptocompare([coin_id]):
+            return "ok"
+    except Exception as e:
+        print(f"[data_feed] validate via cryptocompare failed: {e}")
+        try:
+            return "ok" if coin_id in _fetch_coingecko([coin_id]) else "notfound"
+        except Exception as e2:
+            print(f"[data_feed] validate via coingecko failed: {e2}")
+            return "error"
+    # CryptoCompare ענה אבל לא הכיר - ננסה את CoinGecko לפני שמוותרים
+    try:
+        return "ok" if coin_id in _fetch_coingecko([coin_id]) else "notfound"
     except Exception:
-        return False
+        return "error"
