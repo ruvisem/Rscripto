@@ -39,6 +39,11 @@ _history = {}
 _backoff_until = 0.0
 _backoff_sec = 60
 
+# מטמון: הנתונים המוצלחים האחרונים לכל מטבע (לשימוש פקודות ובזמן תקלות רשת)
+_last_good = {}       # coin_id -> data dict
+_last_good_ts = 0.0
+_CACHE_MAX_AGE_SEC = 300  # עד 5 דקות אחורה נחשב "טרי מספיק"
+
 _demo_prices = {}
 _DEMO_BASE = {"bitcoin": 105000.0, "ethereum": 5600.0, "solana": 310.0}
 
@@ -129,12 +134,20 @@ def _fetch_coingecko(watchlist):
     return out
 
 
+def _from_cache(watchlist):
+    """מחזיר נתונים מהמטמון אם הם טריים מספיק."""
+    if time.time() - _last_good_ts > _CACHE_MAX_AGE_SEC:
+        return {}
+    return {c: _last_good[c] for c in watchlist if c in _last_good}
+
+
 def get_snapshot(watchlist):
     """
     מחזיר {coin_id: {price, change_24h, volume_24h}} ומעדכן היסטוריה.
-    מחזיר {} בשגיאה (הלולאה תנסה שוב בסבב הבא).
+    בכשל רשת - מחזיר את הנתונים האחרונים מהמטמון (עד גיל 5 דק'),
+    כך שפקודות טלגרם לא נכשלות בגלל חסימת קצב רגעית.
     """
-    global _backoff_until, _backoff_sec
+    global _backoff_until, _backoff_sec, _last_good_ts
     if config.DEMO_MODE:
         data = _fetch_demo(watchlist)
         for coin, d in data.items():
@@ -142,7 +155,7 @@ def get_snapshot(watchlist):
         return data
 
     if time.time() < _backoff_until:
-        return {}
+        return _from_cache(watchlist)
 
     data = {}
     try:
@@ -154,13 +167,12 @@ def get_snapshot(watchlist):
             data = _fetch_coingecko(watchlist)
         except Exception as e2:
             print(f"[data_feed] coingecko fallback error: {e2}")
-            # חסימת קצב או תקלה בשני המקורות - נסיגה הולכת וגדלה
             _backoff_until = time.time() + _backoff_sec
             _backoff_sec = min(_backoff_sec * 2, 900)
             print(f"[data_feed] ממתין {int(_backoff_until - time.time())} שניות לפני ניסיון חוזר")
-            return {}
+            return _from_cache(watchlist)
 
-    # מטבעות שלא נמצאו במקור הראשי - ננסה להשלים מהגיבוי (פעם בסבב)
+    # מטבעות שלא נמצאו במקור הראשי - ננסה להשלים מהגיבוי
     missing = [c for c in watchlist if c not in data]
     if missing:
         try:
@@ -171,6 +183,14 @@ def get_snapshot(watchlist):
     for coin, d in data.items():
         if d.get("price"):
             _record(coin, d["price"])
+            _last_good[coin] = d
+    if data:
+        _last_good_ts = time.time()
+
+    # השלמה אחרונה מהמטמון למטבעות שעדיין חסרים
+    for coin in watchlist:
+        if coin not in data and coin in _from_cache([coin]):
+            data[coin] = _last_good[coin]
     return data
 
 
