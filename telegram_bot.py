@@ -131,12 +131,22 @@ def _handle_command(state, chat_id, text):
     elif cmd == "/watch" and arg:
         if arg in state["watchlist"]:
             send(chat_id, f"{arg} כבר במעקב.")
-        elif data_feed.validate_coin(arg):
-            state["watchlist"].append(arg)
-            storage.save(state)
-            send(chat_id, f"✅ {arg} נוסף למעקב.")
         else:
-            send(chat_id, f"❌ לא מצאתי את '{arg}' ב-CoinGecko. ודא שזה המזהה המלא (למשל bitcoin ולא btc).")
+            result = data_feed.validate_coin(arg)
+            if result == "ok":
+                state["watchlist"].append(arg)
+                storage.save(state)
+                send(chat_id, f"✅ {arg} נוסף למעקב.")
+            elif result == "error":
+                # תקלת רשת רגעית - מוסיפים בכל זאת, הסריקה הבאה תאמת
+                state["watchlist"].append(arg)
+                storage.save(state)
+                send(chat_id, f"✅ {arg} נוסף למעקב.\n"
+                              "(שרת המחירים עמוס כרגע - אם המזהה שגוי הוא יופיע "
+                              "כ'אין נתונים' ב-/status ותוכל להסירו עם /unwatch)")
+            else:
+                send(chat_id, f"❌ לא מצאתי את '{arg}'. ודא שזה המזהה המלא "
+                              "מ-CoinGecko (למשל bitcoin ולא btc, ripple ולא xrp).")
 
     elif cmd == "/unwatch" and arg:
         if arg in state["watchlist"]:
@@ -225,3 +235,4 @@ def poll_loop(state):
                 except Exception as e:
                     print(f"[telegram] command error: {e}")
         time.sleep(1)
+ 
